@@ -18,6 +18,13 @@ class MakeApiAndFileCommand extends Command
         $name = str_replace(' ', '', ucwords($rawName));
         $version = $this->argument('version') ?? 'V1';
 
+        // Create Model with Migration
+        $modelName = $name;
+        Artisan::call("make:model", [
+            'name' => $modelName,
+            '-m' => true, // This flag indicates the creation of the migration
+        ]);
+
         // Create API Controller and Resource
         $controllerName = "Api\\$version\\{$name}Controller";
 
@@ -30,11 +37,9 @@ class MakeApiAndFileCommand extends Command
             'name' => "Api\\$version\\$name\\Store{$name}Request",
         ]);
 
-
         Artisan::call("make:request", [
             'name' => "Api\\$version\\$name\\Update{$name}Request",
         ]);
-
 
         Artisan::call("make:resource", [
             'name' => "Api\\$version\\$name\\{$name}Resource",
@@ -68,7 +73,8 @@ class MakeApiAndFileCommand extends Command
         $repositoryPath = app_path("Repositories/{$name}Repository.php");
         $servicePath = app_path("Services/{$name}Service.php");
 
-        $nameMin = strtolower($name);
+        // Convert $name to camel case
+        $nameMin = lcfirst($name);
 
         $repositoryContent = "<?php\n\nnamespace App\\Repositories;\n\nuse App\\Models\\{$name};\n\nclass {$name}Repository extends BaseRepository\n{\n    const RELATIONS = [];\n\n    public function __construct({$name} \${$nameMin})\n    {\n        parent::__construct(\${$nameMin}, self::RELATIONS);\n    }\n}\n";
 
@@ -96,7 +102,6 @@ class MakeApiAndFileCommand extends Command
             $controllerContent = preg_replace('/class .*?\n{/', "$0$constructor$methods", $controllerContent, 1);
             File::put($controllerPath, $controllerContent);
         }
-
 
         $this->info("API Controller, Resource, Repository, Service, and Base Repository for {$name} created successfully in version {$version}.");
     }
