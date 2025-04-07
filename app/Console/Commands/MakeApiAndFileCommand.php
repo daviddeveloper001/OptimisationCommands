@@ -20,9 +20,15 @@ class MakeApiAndFileCommand extends Command
 
         $this->createModelWithMigration($name);
         $this->createApiComponents($name, $version);
+        $this->createApiController();
         $this->createBaseRepository();
         $this->createRepository($name);
         $this->createService($name, $version);
+        $this->createFilter($name);
+        $this->createQueryFilter();
+        $this->createException($name);
+        $this->createBaseModel($name);
+        $this->updateRoutes($name, $version);
         $this->updateController($name, $version);
 
         $this->info("API components for {$name} created successfully in version {$version}.");
@@ -56,6 +62,47 @@ class MakeApiAndFileCommand extends Command
         Artisan::call("make:resource", [
             'name' => "Api\\$version\\$name\\{$name}Resource{$versionSuffix}",
         ]);
+    }
+
+    private function createApiController(): void
+    {
+        $apiControllerPath = app_path("Http/Controllers/Api/V1/ApiController.php");
+
+        // Asegúrate de que la carpeta exista
+        if (!File::exists(app_path("Http/Controllers/Api/V1"))) {
+            File::makeDirectory(app_path("Http/Controllers/Api/V1"), 0755, true);
+        }
+
+        if (!File::exists($apiControllerPath)) {
+            $apiControllerContent = <<<PHP
+<?php
+
+namespace App\Http\Controllers\Api\V1;
+
+use App\Http\Controllers\Controller;
+use App\Traits\ApiResponses;
+
+class ApiController extends Controller
+{
+    use ApiResponses;
+
+    public function include(string \$relationship): bool
+    {
+        \$param = request()->get('include');
+
+        if (!isset(\$param)) {
+            return false;
+        }
+
+        \$includesValues = explode(',', strtolower(\$param));
+
+        return in_array(strtolower(\$relationship), \$includesValues);
+    }
+}
+PHP;
+
+            File::put($apiControllerPath, $apiControllerContent);
+        }
     }
 
     private function createBaseRepository(): void
@@ -99,90 +146,367 @@ class MakeApiAndFileCommand extends Command
     private function createService(string $name, string $version): void
     {
         $versionSuffix = $version !== 'V1' ? $version : '';
-        $servicePath = app_path("Services/{$name}Service{$versionSuffix}.php");
+        $servicePath = app_path("Services/Api/{$version}/{$name}Service{$versionSuffix}.php");
+
+        // Asegúrate de que la carpeta exista
+        if (!File::exists(app_path("Services/Api/{$version}"))) {
+            File::makeDirectory(app_path("Services/Api/{$version}"), 0755, true);
+        }
 
         if (!File::exists($servicePath)) {
             $nameMin = lcfirst($name);
-            $serviceContent = "<?php\n\nnamespace App\\Services;\n\nuse App\\Models\\{$name};\nuse App\\Repositories\\{$name}Repository;\n\nclass {$name}Service{$versionSuffix}\n{\n    public function __construct(private {$name}Repository \${$nameMin}Repository) {}\n\n    public function getAll{$name}s()\n    {\n        return \$this->{$nameMin}Repository->all();\n    }\n\n    public function get{$name}ById({$name} \${$nameMin})\n    {\n        return \$this->{$nameMin}Repository->find(\${$nameMin});\n    }\n\n    public function create{$name}(array \$data)\n    {\n        return \$this->{$nameMin}Repository->create(\$data);\n    }\n\n    public function update{$name}({$name} \${$nameMin}, array \$data)\n    {\n        return \$this->{$nameMin}Repository->update(\${$nameMin}, \$data);\n    }\n\n    public function delete{$name}({$name} \${$nameMin})\n    {\n        return \$this->{$nameMin}Repository->delete(\${$nameMin});\n    }\n}\n";
+            $serviceContent = <<<PHP
+    <?php
+    
+    namespace App\Services\Api\\{$version};
+    
+    use App\Models\\{$name};
+    use App\Exceptions\\{$name}Exception;
+    use App\Repositories\\{$name}Repository;
+    use Illuminate\Http\Response;
+    
+    class {$name}Service{$versionSuffix}
+    {
+        public function __construct(private {$name}Repository \${$nameMin}Repository) {}
+    
+        public function getAll{$name}s(\$filters, \$perPage)
+        {
+            try {
+                return {$name}::filter(\$filters)->paginate(\$perPage);
+            } catch (\Exception \$e) {
+                throw new {$name}Exception('Failed to retrieve {$name}s', Response::HTTP_INTERNAL_SERVER_ERROR);
+            }
+        }
+    
+        public function get{$name}ById({$name} \${$nameMin})
+        {
+            \$result = \$this->{$nameMin}Repository->find(\${$nameMin});
+            if (!\$result) {
+                throw new {$name}Exception('{$name} not found', Response::HTTP_NOT_FOUND);
+            }
+            return \$result;
+        }
+    
+        public function create{$name}(array \$data)
+        {
+            try {
+                return \$this->{$nameMin}Repository->create(\$data);
+            } catch (\Exception \$e) {
+                throw new {$name}Exception('Failed to create {$name}', Response::HTTP_INTERNAL_SERVER_ERROR);
+            }
+        }
+    
+        public function update{$name}({$name} \${$nameMin}, array \$data)
+        {
+            try {
+                return \$this->{$nameMin}Repository->update(\${$nameMin}, \$data);
+            } catch (\Exception \$e) {
+                throw new {$name}Exception('Failed to update {$name}', Response::HTTP_INTERNAL_SERVER_ERROR);
+            }
+        }
+    
+        public function delete{$name}({$name} \${$nameMin})
+        {
+            try {
+                return \$this->{$nameMin}Repository->delete(\${$nameMin});
+            } catch (\Exception \$e) {
+                throw new {$name}Exception('Failed to delete {$name}', Response::HTTP_INTERNAL_SERVER_ERROR);
+            }
+        }
+    }
+    PHP;
 
             File::put($servicePath, $serviceContent);
         }
     }
 
-    private function updateController(string $name, string $version): void
+    private function createFilter(string $name): void
     {
-        $versionSuffix = $version !== 'V1' ? $version : '';
-        $controllerPath = app_path("Http/Controllers/Api/{$version}/{$name}Controller{$versionSuffix}.php");
-    
-        if (File::exists($controllerPath)) {
-            $controllerContent = File::get($controllerPath);
-    
-            $nameMin = lcfirst($name);
-            $trait = "use App\Traits\ApiResponses;";
-            $constructor = "\n    public function __construct(private {$name}Service{$versionSuffix} \${$nameMin}Service) {}\n";
-    
-            $methods = <<<METHODS
-    
-        public function index()
-        {
-            try {
-                \${$nameMin}s = \$this->{$nameMin}Service->getAll{$name}s();
-                return \$this->ok('{$name}s retrieved successfully', {$name}Resource::collection(\${$nameMin}s));
-            } catch (Exception \$e) {
-                return \$this->error('Failed to retrieve {$name}s', 500);
-            }
+        $filterPath = app_path("Filters/{$name}Filter.php");
+
+        // Asegúrate de que la carpeta exista
+        if (!File::exists(app_path('Filters'))) {
+            File::makeDirectory(app_path('Filters'), 0755, true);
         }
-    
-        public function store(Store{$name}Request{$versionSuffix} \$request)
-        {
-            try {
-                \${$nameMin} = \$this->{$nameMin}Service->create{$name}(\$request->validated());
-                return \$this->ok('{$name} created successfully', new {$name}Resource(\${$nameMin}));
-            } catch (Exception \$e) {
-                return \$this->error('Failed to create {$name}', 500);
-            }
-        }
-    
-        public function show({$name} \${$nameMin})
-        {
-            try {
-                return \$this->ok('{$name} retrieved successfully', new {$name}Resource(\${$nameMin}));
-            } catch (Exception \$e) {
-                return \$this->error('Failed to retrieve {$name}', 500);
-            }
-        }
-    
-        public function update(Update{$name}Request{$versionSuffix} \$request, {$name} \${$nameMin})
-        {
-            try {
-                \$this->{$nameMin}Service->update{$name}(\${$nameMin}, \$request->validated());
-                return \$this->ok('{$name} updated successfully');
-            } catch (Exception \$e) {
-                return \$this->error('Failed to update {$name}', 500);
-            }
-        }
-    
-        public function destroy({$name} \${$nameMin})
-        {
-            try {
-                \$this->{$nameMin}Service->delete{$name}(\${$nameMin});
-                return \$this->ok('{$name} deleted successfully');
-            } catch (Exception \$e) {
-                return \$this->error('Failed to delete {$name}', 500);
-            }
-        }
-    
-    METHODS;
-    
-            // Add the trait if not already present
-            if (!str_contains($controllerContent, $trait)) {
-                $controllerContent = preg_replace('/namespace .*?;/', "$0\n\n$trait", $controllerContent, 1);
-            }
-    
-            // Add the constructor and methods
-            $controllerContent = preg_replace('/class .*?\n{/', "$0$constructor$methods", $controllerContent, 1);
-    
-            File::put($controllerPath, $controllerContent);
+
+        if (!File::exists($filterPath)) {
+            $filterContent = <<<PHP
+<?php
+
+namespace App\Filters;
+
+class {$name}Filter extends QueryFilter
+{
+    protected array \$sortable = [
+        'name',
+        'createdAt' => 'created_at',
+        'updatedAt' => 'updated_at',
+    ];
+
+    public function name(string \$value): void
+    {
+        \$this->builder->where('name', 'LIKE', "%\$value%");
+    }
+
+    public function createdAt(string \$value): void
+    {
+        \$dates = explode(',', \$value);
+
+        if (count(\$dates) > 1) {
+            \$this->builder->whereBetween('created_at', \$dates);
+        } else {
+            \$this->builder->whereDate('created_at', \$value);
         }
     }
+
+    public function updatedAt(string \$value): void
+    {
+        \$dates = explode(',', \$value);
+
+        if (count(\$dates) > 1) {
+            \$this->builder->whereBetween('updated_at', \$dates);
+        } else {
+            \$this->builder->whereDate('updated_at', \$value);
+        }
+    }
+
+    public function include(string \$value): void
+    {
+        \$this->builder->with(explode(',', \$value));
+    }
+}
+PHP;
+
+            File::put($filterPath, $filterContent);
+        }
+    }
+
+    private function createQueryFilter(): void
+    {
+        $queryFilterPath = app_path("Filters/QueryFilter.php");
+
+        // Asegúrate de que la carpeta exista
+        if (!File::exists(app_path('Filters'))) {
+            File::makeDirectory(app_path('Filters'), 0755, true);
+        }
+
+        if (!File::exists($queryFilterPath)) {
+            $queryFilterContent = <<<PHP
+<?php
+
+namespace App\Filters;
+
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\Request;
+
+abstract class QueryFilter
+{
+    protected Builder \$builder;
+    protected Request \$request;
+    protected array \$sortable = [];
+
+    public function __construct(Request \$request)
+    {
+        \$this->request = \$request;
+    }
+
+    public function apply(Builder \$builder): Builder
+    {
+        \$this->builder = \$builder;
+
+        foreach (\$this->request->all() as \$key => \$value) {
+            if (method_exists(\$this, \$key)) {
+                \$this->\$key(\$value);
+            }
+        }
+
+        return \$builder;
+    }
+
+    protected function filter(array \$arr): Builder
+    {
+        foreach (\$arr as \$key => \$value) {
+            if (method_exists(\$this, \$key)) {
+                \$this->\$key(\$value);
+            }
+        }
+
+        return \$this->builder;
+    }
+
+    protected function sort(string \$value): void
+    {
+        \$sortAttributes = explode(',', \$value);
+
+        foreach (\$sortAttributes as \$sortAttribute) {
+            \$direction = 'asc';
+
+            if (strpos(\$sortAttribute, '-') === 0) {
+                \$direction = 'desc';
+                \$sortAttribute = substr(\$sortAttribute, 1);
+            }
+
+            if (!in_array(\$sortAttribute, \$this->sortable) && !array_key_exists(\$sortAttribute, \$this->sortable)) {
+                continue;
+            }
+
+            \$columnName = \$this->sortable[\$sortAttribute] ?? \$sortAttribute;
+
+            \$this->builder->orderBy(\$columnName, \$direction);
+        }
+    }
+}
+PHP;
+
+            File::put($queryFilterPath, $queryFilterContent);
+        }
+    }
+
+    private function createException(string $name): void
+    {
+        $exceptionPath = app_path("Exceptions/{$name}Exception.php");
+
+        // Asegúrate de que la carpeta exista
+        if (!File::exists(app_path('Exceptions'))) {
+            File::makeDirectory(app_path('Exceptions'), 0755, true);
+        }
+
+        if (!File::exists($exceptionPath)) {
+            $exceptionContent = <<<PHP
+<?php
+
+namespace App\Exceptions;
+
+use Exception;
+use Illuminate\Http\Response;
+
+class {$name}Exception extends Exception
+{
+    public function __construct(
+        string \$message = '{$name} error occurred',
+        int \$code = Response::HTTP_INTERNAL_SERVER_ERROR,
+        ?Exception \$previous = null
+    ) {
+        parent::__construct(\$message, \$code, \$previous);
+    }
+
+    public function render(\$request)
+    {
+        if (\$request->isJson()) {
+            return response()->json([
+                'message' => \$this->getMessage(),
+            ], \$this->code);
+        }
+    }
+}
+PHP;
+
+            File::put($exceptionPath, $exceptionContent);
+        }
+    }
+
+    private function createBaseModel(string $name): void
+    {
+        $modelPath = app_path("Models/{$name}.php");
+
+        if (File::exists($modelPath)) {
+            $modelContent = File::get($modelPath);
+
+            if (!str_contains($modelContent, 'SoftDeletes')) {
+                $modelContent = preg_replace('/class .*? extends Model/', "use Illuminate\\Database\\Eloquent\\SoftDeletes;\n\n$0\n{\n    use SoftDeletes;", $modelContent);
+            }
+
+            if (!str_contains($modelContent, 'scopeFilter')) {
+                $scopeMethod = <<<PHP
+
+    public function scopeFilter(Builder \$builder, QueryFilter \$filters): Builder
+    {
+        return \$filters->apply(\$builder);
+    }
+PHP;
+
+                $modelContent = preg_replace('/\}\s*$/', "$scopeMethod\n}", $modelContent);
+            }
+
+            File::put($modelPath, $modelContent);
+        }
+    }
+
+    private function updateRoutes(string $name, string $version): void
+    {
+        $routesPath = base_path("routes/api_v2.php");
+        $routeName = strtolower(str_replace('_', '-', $name));
+        $controllerName = "App\\Http\\Controllers\\Api\\$version\\{$name}Controller$version";
+
+        if (File::exists($routesPath)) {
+            $routesContent = File::get($routesPath);
+
+            if (!str_contains($routesContent, $routeName)) {
+                $newRoute = "Route::apiResource('{$routeName}s', {$controllerName}::class);";
+                $routesContent = preg_replace('/\}\);/', "    $newRoute\n});", $routesContent);
+                File::put($routesPath, $routesContent);
+            }
+        }
+    }
+
+    private function updateController(string $name, string $version): void
+{
+    $versionSuffix = $version !== 'V1' ? $version : '';
+    $controllerPath = app_path("Http/Controllers/Api/{$version}/{$name}Controller{$versionSuffix}.php");
+
+    $nameMin = lcfirst($name);
+    $controllerContent = <<<PHP
+<?php
+
+namespace App\Http\Controllers\Api\\{$version};
+
+use App\Models\\{$name};
+use App\Filters\\{$name}SFilter;
+use App\Services\\{$name}Service{$versionSuffix};
+use App\Http\Controllers\Api\V1\ApiController;
+use App\Http\Resources\Api\\{$version}\\{$name}\\{$name}Resource{$versionSuffix};
+use App\Http\Requests\Api\\{$version}\\{$name}\\Store{$name}Request{$versionSuffix};
+use App\Http\Requests\Api\\{$version}\\{$name}\\Update{$name}Request{$versionSuffix};
+
+class {$name}Controller{$versionSuffix} extends ApiController
+{
+    public function __construct(private {$name}Service{$versionSuffix} \${$nameMin}Service) {}
+
+    public function index({$name}SFilter \$filters)
+    {
+        \$perPage = request()->input('per_page', 10);
+
+        \${$nameMin}s = \$this->{$nameMin}Service->getAll{$name}s(\$filters, \$perPage);
+
+        return \$this->ok('{$name}s retrieved successfully', {$name}Resource{$versionSuffix}::collection(\${$nameMin}s));
+    }
+
+    public function store(Store{$name}Request{$versionSuffix} \$request)
+    {
+        \${$nameMin} = \$this->{$nameMin}Service->create{$name}(\$request->validated());
+        return \$this->ok('{$name} created successfully', new {$name}Resource{$versionSuffix}(\${$nameMin}));
+    }
+
+    public function show({$name} \${$nameMin})
+    {
+        return \$this->ok('{$name} retrieved successfully', new {$name}Resource{$versionSuffix}(\${$nameMin}));
+    }
+
+    public function update(Update{$name}Request{$versionSuffix} \$request, {$name} \${$nameMin})
+    {
+        \$this->{$nameMin}Service->update{$name}(\${$nameMin}, \$request->validated());
+        return \$this->ok('{$name} updated successfully');
+    }
+
+    public function destroy({$name} \${$nameMin})
+    {
+        \$this->{$nameMin}Service->delete{$name}(\${$nameMin});
+        return \$this->ok('{$name} deleted successfully');
+    }
+}
+PHP;
+
+    // Sobrescribe el archivo del controlador con el contenido actualizado
+    File::put($controllerPath, $controllerContent);
+}
 }
