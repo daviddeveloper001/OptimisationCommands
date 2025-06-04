@@ -42,9 +42,11 @@ class MakeApiAndFileCommand extends Command
         ]);
     }
 
-    private function createApiComponents(string $name, string $version): void
+    private function createApiComponents(string $name, ?string $version = null): void
     {
-        $versionSuffix = $version !== 'V1' ? $version : '';
+        $version = $version ?? 'V1';
+        $versionSuffix = $version; // Siempre agregar el sufijo de versión
+
         $controllerName = "Api\\$version\\{$name}Controller{$versionSuffix}";
 
         Artisan::call("make:controller", [
@@ -64,25 +66,30 @@ class MakeApiAndFileCommand extends Command
         ]);
     }
 
-    private function createApiController(): void
+
+    private function createApiController(string $version = 'V1'): void
     {
-        $apiControllerPath = app_path("Http/Controllers/Api/V1/ApiController.php");
+        $versionSuffix = $version;
+        $versionNamespace = $version;
+        $directoryPath = app_path("Http/Controllers/Api/{$versionNamespace}");
+        $controllerFileName = "ApiController{$versionSuffix}.php";
+        $apiControllerPath = "{$directoryPath}/{$controllerFileName}";
 
         // Asegúrate de que la carpeta exista
-        if (!File::exists(app_path("Http/Controllers/Api/V1"))) {
-            File::makeDirectory(app_path("Http/Controllers/Api/V1"), 0755, true);
+        if (!File::exists($directoryPath)) {
+            File::makeDirectory($directoryPath, 0755, true);
         }
 
         if (!File::exists($apiControllerPath)) {
             $apiControllerContent = <<<PHP
 <?php
 
-namespace App\Http\Controllers\Api\V1;
+namespace App\Http\Controllers\Api\\{$versionNamespace};
 
 use App\Http\Controllers\Controller;
 use App\Traits\ApiResponses;
 
-class ApiController extends Controller
+class ApiController{$versionSuffix} extends Controller
 {
     use ApiResponses;
 
@@ -105,120 +112,232 @@ PHP;
         }
     }
 
-    private function createBaseRepository(): void
+
+    private function createBaseRepository(string $version = 'V1'): void
     {
-        $interfacePath = app_path("Interfaces/BaseRepositoryInterface.php");
-        $baseRepositoryPath = app_path("Repositories/BaseRepository.php");
+        $versionSuffix = $version;
+        $interfaceDir = app_path("Interfaces/{$versionSuffix}");
+        $repositoryDir = app_path("Repositories/{$versionSuffix}");
 
-        if (!File::exists(app_path('Interfaces'))) {
-            File::makeDirectory(app_path('Interfaces'), 0755, true);
+        $interfacePath = "{$interfaceDir}/BaseRepositoryInterface{$versionSuffix}.php";
+        $repositoryPath = "{$repositoryDir}/BaseRepository{$versionSuffix}.php";
+
+        // Crear carpetas si no existen
+        if (!File::exists($interfaceDir)) {
+            File::makeDirectory($interfaceDir, 0755, true);
         }
 
-        if (!File::exists(app_path('Repositories'))) {
-            File::makeDirectory(app_path('Repositories'), 0755, true);
+        if (!File::exists($repositoryDir)) {
+            File::makeDirectory($repositoryDir, 0755, true);
         }
 
+        // Crear interface
         if (!File::exists($interfacePath)) {
-            $interfaceContent = "<?php\n\nnamespace App\\Interfaces;\n\nuse Illuminate\\Database\\Eloquent\\Model;\n\ninterface BaseRepositoryInterface\n{\n    public function all();\n    public function find(Model \$model);\n    public function findBy(int \$id);\n    public function create(array \$data);\n    public function update(Model \$model, array \$data);\n    public function delete(Model \$model);\n}\n";
+            $interfaceContent = <<<PHP
+<?php
+
+namespace App\Interfaces\\{$versionSuffix};
+
+use Illuminate\Database\Eloquent\Model;
+
+interface BaseRepositoryInterface{$versionSuffix}
+{
+    public function all();
+    public function find(Model \$model);
+    public function findBy(int \$id);
+    public function create(array \$data);
+    public function update(Model \$model, array \$data);
+    public function delete(Model \$model);
+}
+PHP;
 
             File::put($interfacePath, $interfaceContent);
         }
 
-        if (!File::exists($baseRepositoryPath)) {
-            $baseRepositoryContent = "<?php\n\nnamespace App\\Repositories;\n\nuse Illuminate\\Database\\Eloquent\\Model;\nuse App\\Interfaces\\BaseRepositoryInterface;\n\nclass BaseRepository implements BaseRepositoryInterface\n{\n    protected \$model;\n    protected \$relations = [];\n\n    public function __construct(Model \$model, array \$relations = [])\n    {\n        \$this->model = \$model;\n        \$this->relations = \$relations;\n    }\n\n    public function all()\n    {\n        \$query = \$this->model->latest();\n        if (!empty(\$this->relations)) {\n            \$query->with(\$this->relations);\n        }\n        return \$query->get();\n    }\n\n    public function find(Model \$model)\n    {\n        \$query = \$this->model;\n        if (!empty(\$this->relations)) {\n            \$query->with(\$this->relations);\n        }\n        return \$query->find(\$model);\n    }\n\n    public function create(array \$data)\n    {\n        return \$this->model->create(\$data);\n    }\n\n    public function update(Model \$model, array \$data)\n    {\n        \$model->fill(\$data);\n        \$model->save();\n        return \$model;\n    }\n\n    public function delete(Model \$model)\n    {\n        return \$model->delete();\n    }\n\n    public function findBy(int \$id)\n    {\n        return \$this->model->find(\$id);\n    }\n}\n";
+        // Crear repositorio base
+        if (!File::exists($repositoryPath)) {
+            $repositoryContent = <<<PHP
+<?php
 
-            File::put($baseRepositoryPath, $baseRepositoryContent);
-        }
+namespace App\Repositories\\{$versionSuffix};
+
+use Illuminate\Database\Eloquent\Model;
+use App\Interfaces\\{$versionSuffix}\BaseRepositoryInterface{$versionSuffix};
+
+class BaseRepository{$versionSuffix} implements BaseRepositoryInterface{$versionSuffix}
+{
+    protected \$model;
+    protected \$relations = [];
+
+    public function __construct(Model \$model, array \$relations = [])
+    {
+        \$this->model = \$model;
+        \$this->relations = \$relations;
     }
 
-    private function createRepository(string $name): void
+    public function all()
     {
-        $repositoryPath = app_path("Repositories/{$name}Repository.php");
+        \$query = \$this->model->latest();
+        if (!empty(\$this->relations)) {
+            \$query->with(\$this->relations);
+        }
+        return \$query->get();
+    }
 
-        if (!File::exists($repositoryPath)) {
-            $nameMin = lcfirst($name);
-            $repositoryContent = "<?php\n\nnamespace App\\Repositories;\n\nuse App\\Models\\{$name};\n\nclass {$name}Repository extends BaseRepository\n{\n    const RELATIONS = [];\n\n    public function __construct({$name} \${$nameMin})\n    {\n        parent::__construct(\${$nameMin}, self::RELATIONS);\n    }\n}\n";
+    public function find(Model \$model)
+    {
+        \$query = \$this->model;
+        if (!empty(\$this->relations)) {
+            \$query->with(\$this->relations);
+        }
+        return \$query->find(\$model);
+    }
+
+    public function create(array \$data)
+    {
+        return \$this->model->create(\$data);
+    }
+
+    public function update(Model \$model, array \$data)
+    {
+        \$model->fill(\$data);
+        \$model->save();
+        return \$model;
+    }
+
+    public function delete(Model \$model)
+    {
+        return \$model->delete();
+    }
+
+    public function findBy(int \$id)
+    {
+        return \$this->model->find(\$id);
+    }
+}
+PHP;
 
             File::put($repositoryPath, $repositoryContent);
         }
     }
 
-    private function createService(string $name, string $version): void
-    {
-        $versionSuffix = $version !== 'V1' ? $version : '';
-        $servicePath = app_path("Services/Api/{$version}/{$name}Service{$versionSuffix}.php");
 
-        // Asegúrate de que la carpeta exista
-        if (!File::exists(app_path("Services/Api/{$version}"))) {
-            File::makeDirectory(app_path("Services/Api/{$version}"), 0755, true);
+    private function createRepository(string $name, string $version = 'V1'): void
+    {
+        $versionSuffix = $version;
+        $classSuffix = $versionSuffix; // Para el sufijo de clase
+        $dir = app_path("Repositories/{$versionSuffix}");
+        $repositoryPath = "{$dir}/{$name}Repository{$classSuffix}.php";
+
+        if (!File::exists($dir)) {
+            File::makeDirectory($dir, 0755, true);
+        }
+
+        if (!File::exists($repositoryPath)) {
+            $nameMin = lcfirst($name);
+
+            $repositoryContent = <<<PHP
+<?php
+
+namespace App\Repositories\\{$versionSuffix};
+
+use App\Models\\{$name};
+use App\Repositories\\{$versionSuffix}\BaseRepository{$classSuffix};
+
+class {$name}Repository{$classSuffix} extends BaseRepository{$classSuffix}
+{
+    const RELATIONS = [];
+
+    public function __construct({$name} \${$nameMin})
+    {
+        parent::__construct(\${$nameMin}, self::RELATIONS);
+    }
+}
+PHP;
+
+            File::put($repositoryPath, $repositoryContent);
+        }
+    }
+
+
+    private function createService(string $name, string $version = 'V1'): void
+    {
+        $versionSuffix = $version; // Mantén siempre el sufijo
+        $dir = app_path("Services/Api/{$versionSuffix}");
+        $servicePath = "{$dir}/{$name}Service{$versionSuffix}.php";
+
+        if (!File::exists($dir)) {
+            File::makeDirectory($dir, 0755, true);
         }
 
         if (!File::exists($servicePath)) {
             $nameMin = lcfirst($name);
+
             $serviceContent = <<<PHP
-    <?php
-    
-    namespace App\Services\Api\\{$version};
-    
-    use App\Models\\{$name};
-    use App\Exceptions\\{$name}Exception;
-    use App\Repositories\\{$name}Repository;
-    use Illuminate\Http\Response;
-    
-    class {$name}Service{$versionSuffix}
+<?php
+
+namespace App\Services\Api\\{$versionSuffix};
+
+use App\Models\\{$name};
+use App\Exceptions\\{$name}Exception;
+use App\Repositories\\{$versionSuffix}\\{$name}Repository{$versionSuffix};
+use Illuminate\Http\Response;
+
+class {$name}Service{$versionSuffix}
+{
+    public function __construct(private {$name}Repository{$versionSuffix} \${$nameMin}Repository) {}
+
+    public function getAll{$name}s(\$filters, \$perPage)
     {
-        public function __construct(private {$name}Repository \${$nameMin}Repository) {}
-    
-        public function getAll{$name}s(\$filters, \$perPage)
-        {
-            try {
-                return {$name}::filter(\$filters)->paginate(\$perPage);
-            } catch (\Exception \$e) {
-                throw new {$name}Exception('Failed to retrieve {$name}s', Response::HTTP_INTERNAL_SERVER_ERROR);
-            }
-        }
-    
-        public function get{$name}ById({$name} \${$nameMin})
-        {
-            \$result = \$this->{$nameMin}Repository->find(\${$nameMin});
-            if (!\$result) {
-                throw new {$name}Exception('{$name} not found', Response::HTTP_NOT_FOUND);
-            }
-            return \$result;
-        }
-    
-        public function create{$name}(array \$data)
-        {
-            try {
-                return \$this->{$nameMin}Repository->create(\$data);
-            } catch (\Exception \$e) {
-                throw new {$name}Exception('Failed to create {$name}', Response::HTTP_INTERNAL_SERVER_ERROR);
-            }
-        }
-    
-        public function update{$name}({$name} \${$nameMin}, array \$data)
-        {
-            try {
-                return \$this->{$nameMin}Repository->update(\${$nameMin}, \$data);
-            } catch (\Exception \$e) {
-                throw new {$name}Exception('Failed to update {$name}', Response::HTTP_INTERNAL_SERVER_ERROR);
-            }
-        }
-    
-        public function delete{$name}({$name} \${$nameMin})
-        {
-            try {
-                return \$this->{$nameMin}Repository->delete(\${$nameMin});
-            } catch (\Exception \$e) {
-                throw new {$name}Exception('Failed to delete {$name}', Response::HTTP_INTERNAL_SERVER_ERROR);
-            }
+        try {
+            return {$name}::filter(\$filters)->paginate(\$perPage);
+        } catch (\Exception \$e) {
+            throw new {$name}Exception('Failed to retrieve {$name}s', Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
-    PHP;
+
+    public function get{$name}ById({$name} \${$nameMin})
+    {
+        \$result = \$this->{$nameMin}Repository->find(\${$nameMin});
+        if (!\$result) {
+            throw new {$name}Exception('{$name} not found', Response::HTTP_NOT_FOUND);
+        }
+        return \$result;
+    }
+
+    public function create{$name}(array \$data)
+    {
+        try {
+            return \$this->{$nameMin}Repository->create(\$data);
+        } catch (\Exception \$e) {
+            throw new {$name}Exception('Failed to create {$name}', Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    public function update{$name}({$name} \${$nameMin}, array \$data)
+    {
+        try {
+            return \$this->{$nameMin}Repository->update(\${$nameMin}, \$data);
+        } catch (\Exception \$e) {
+            throw new {$name}Exception('Failed to update {$name}', Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    public function delete{$name}({$name} \${$nameMin})
+    {
+        try {
+            return \$this->{$nameMin}Repository->delete(\${$nameMin});
+        } catch (\Exception \$e) {
+            throw new {$name}Exception('Failed to delete {$name}', Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
+    }
+}
+PHP;
 
             File::put($servicePath, $serviceContent);
         }
     }
+
 
     private function createFilter(string $name): void
     {
@@ -364,11 +483,11 @@ PHP;
 
     private function createException(string $name): void
     {
-        $exceptionPath = app_path("Exceptions/{$name}Exception.php");
+        $exceptionDir = app_path('Exceptions');
+        $exceptionPath = "{$exceptionDir}/{$name}Exception.php";
 
-        // Asegúrate de que la carpeta exista
-        if (!File::exists(app_path('Exceptions'))) {
-            File::makeDirectory(app_path('Exceptions'), 0755, true);
+        if (!File::exists($exceptionDir)) {
+            File::makeDirectory($exceptionDir, 0755, true);
         }
 
         if (!File::exists($exceptionPath)) {
@@ -378,6 +497,7 @@ PHP;
 namespace App\Exceptions;
 
 use Exception;
+use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
 class {$name}Exception extends Exception
@@ -390,12 +510,12 @@ class {$name}Exception extends Exception
         parent::__construct(\$message, \$code, \$previous);
     }
 
-    public function render(\$request)
+    public function render(Request \$request)
     {
-        if (\$request->isJson()) {
+        if (\$request->expectsJson()) {
             return response()->json([
                 'message' => \$this->getMessage(),
-            ], \$this->code);
+            ], \$this->getCode() ?: Response::HTTP_INTERNAL_SERVER_ERROR);
         }
     }
 }
@@ -405,32 +525,67 @@ PHP;
         }
     }
 
+
     private function createBaseModel(string $name): void
     {
         $modelPath = app_path("Models/{$name}.php");
 
-        if (File::exists($modelPath)) {
-            $modelContent = File::get($modelPath);
+        // Si el archivo no existe, crearlo con la estructura base deseada
+        if (!File::exists($modelPath)) {
+            $modelContent = <<<PHP
+<?php
 
-            if (!str_contains($modelContent, 'SoftDeletes')) {
-                $modelContent = preg_replace('/class .*? extends Model/', "use Illuminate\\Database\\Eloquent\\SoftDeletes;\n\n$0\n{\n    use SoftDeletes;", $modelContent);
-            }
+namespace App\Models;
 
-            if (!str_contains($modelContent, 'scopeFilter')) {
-                $scopeMethod = <<<PHP
 
-    public function scopeFilter(Builder \$builder, QueryFilter \$filters): Builder
-    {
-        return \$filters->apply(\$builder);
-    }
+class {$name} extends ModelBase
+{
+    protected \$table = '';
+
+    protected \$fillable = [
+        
+    ];
+
+    protected \$casts = [
+        
+    ];
+}
 PHP;
 
-                $modelContent = preg_replace('/\}\s*$/', "$scopeMethod\n}", $modelContent);
-            }
+            File::put($modelPath, $modelContent);
+            return; // ya quedó con la estructura deseada, no seguir procesando
+        }
+
+        // Si ya existe, modificarlo si hace falta
+        $modelContent = File::get($modelPath);
+
+        
+
+       if (File::exists($modelPath)) {
+            $modelContent = <<<PHP
+<?php
+
+namespace App\Models;
+
+class {$name} extends ModelBase
+{
+    protected \$table = '';
+
+    protected \$fillable = [
+        
+    ];
+
+    protected \$casts = [
+        
+    ];
+}
+PHP;
 
             File::put($modelPath, $modelContent);
+            return; // ya quedó con la estructura deseada, no seguir procesando
         }
     }
+
 
     private function updateRoutes(string $name, string $version): void
     {
@@ -448,10 +603,10 @@ PHP;
             }
         }
     }
-
-    private function updateController(string $name, string $version): void
+    private function updateController(string $name, ?string $version = null): void
 {
-    $versionSuffix = $version !== 'V1' ? $version : '';
+    $version = $version ?? 'V1';
+    $versionSuffix = $version; // Siempre agregar el sufijo de versión
     $controllerPath = app_path("Http/Controllers/Api/{$version}/{$name}Controller{$versionSuffix}.php");
 
     $nameMin = lcfirst($name);
@@ -461,9 +616,9 @@ PHP;
 namespace App\Http\Controllers\Api\\{$version};
 
 use App\Models\\{$name};
-use App\Filters\\{$name}SFilter;
-use App\Services\\{$name}Service{$versionSuffix};
-use App\Http\Controllers\Api\V1\ApiController;
+use App\Filters\\{$name}Filter;
+use App\Services\\Api\\{$version}\\{$name}Service{$versionSuffix};
+use App\Http\Controllers\Api\\{$version}\ApiController;
 use App\Http\Resources\Api\\{$version}\\{$name}\\{$name}Resource{$versionSuffix};
 use App\Http\Requests\Api\\{$version}\\{$name}\\Store{$name}Request{$versionSuffix};
 use App\Http\Requests\Api\\{$version}\\{$name}\\Update{$name}Request{$versionSuffix};
@@ -472,7 +627,7 @@ class {$name}Controller{$versionSuffix} extends ApiController
 {
     public function __construct(private {$name}Service{$versionSuffix} \${$nameMin}Service) {}
 
-    public function index({$name}SFilter \$filters)
+    public function index({$name}Filter \$filters)
     {
         \$perPage = request()->input('per_page', 10);
 
@@ -509,4 +664,5 @@ PHP;
     // Sobrescribe el archivo del controlador con el contenido actualizado
     File::put($controllerPath, $controllerContent);
 }
+
 }
