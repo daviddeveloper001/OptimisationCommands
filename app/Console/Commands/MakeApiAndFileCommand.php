@@ -527,26 +527,36 @@ PHP;
 namespace App\Exceptions;
 
 use Exception;
-use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use App\Interfaces\V1\ApiRenderableExceptionV1;
 
-class {$name}Exception extends Exception
+class {$name}Exception extends Exception implements ApiRenderableExceptionV1
 {
+    private ?string \$developerHint;
+
     public function __construct(
         string \$message = '{$name} error occurred',
-        int \$code = Response::HTTP_INTERNAL_SERVER_ERROR,
+        ?string \$developerHint = null,
+        int \$code = Response::HTTP_BAD_REQUEST,
         ?Exception \$previous = null
     ) {
         parent::__construct(\$message, \$code, \$previous);
+        \$this->developerHint = \$developerHint;
     }
 
-    public function render(Request \$request)
+    public function getStatusCode(): int
     {
-        if (\$request->expectsJson()) {
-            return response()->json([
-                'message' => \$this->getMessage(),
-            ], \$this->getCode() ?: Response::HTTP_INTERNAL_SERVER_ERROR);
-        }
+        return \$this->getCode();
+    }
+
+    public function getUserMessage(): string
+    {
+        return \$this->getMessage();
+    }
+
+    public function getDeveloperHint(): ?string
+    {
+        return \$this->developerHint;
     }
 }
 PHP;
@@ -554,6 +564,7 @@ PHP;
             File::put($exceptionPath, $exceptionContent);
         }
     }
+
 
 
     private function createBaseModel(string $name): void
@@ -634,14 +645,14 @@ PHP;
         }
     }
     private function updateController(string $name, ?string $version = null): void
-{
-    $version = $version ?? 'V1';
-    $versionSuffix = $version;
-    $controllerPath = app_path("Http/Controllers/Api/{$version}/{$name}Controller{$versionSuffix}.php");
+    {
+        $version = $version ?? 'V1';
+        $versionSuffix = $version;
+        $controllerPath = app_path("Http/Controllers/Api/{$version}/{$name}Controller{$versionSuffix}.php");
 
-    $nameMin = lcfirst($name);
+        $nameMin = lcfirst($name);
 
-    $controllerContent = <<<PHP
+        $controllerContent = <<<PHP
 <?php
 
 namespace App\Http\Controllers\Api\\{$version};
@@ -711,7 +722,6 @@ class {$name}Controller{$versionSuffix} extends ApiController{$versionSuffix}
 }
 PHP;
 
-    File::put($controllerPath, $controllerContent);
-}
-
+        File::put($controllerPath, $controllerContent);
+    }
 }
