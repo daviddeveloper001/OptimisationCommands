@@ -262,7 +262,7 @@ PHP;
 
     private function createService(string $name, string $version = 'V1'): void
     {
-        $versionSuffix = $version; // Mantén siempre el sufijo
+        $versionSuffix = $version;
         $dir = app_path("Services/Api/{$versionSuffix}");
         $servicePath = "{$dir}/{$name}Service{$versionSuffix}.php";
 
@@ -292,17 +292,31 @@ class {$name}Service{$versionSuffix}
         try {
             return {$name}::filter(\$filters)->paginate(\$perPage);
         } catch (\Exception \$e) {
-            throw new {$name}Exception('Failed to retrieve {$name}s', Response::HTTP_INTERNAL_SERVER_ERROR);
+            throw new {$name}Exception(
+                'Failed to retrieve {$name}s',
+                developerHint: \$e->getMessage(),
+                code: Response::HTTP_INTERNAL_SERVER_ERROR,
+                previous: \$e
+            );
         }
     }
 
     public function get{$name}ById({$name} \${$nameMin})
     {
-        \$result = \$this->{$nameMin}Repository->find(\${$nameMin});
-        if (!\$result) {
-            throw new {$name}Exception('{$name} not found', Response::HTTP_NOT_FOUND);
+        try {
+            \$result = \$this->{$nameMin}Repository->find(\${$nameMin});
+            if (!\$result) {
+                throw new {$name}Exception('{$name} not found', Response::HTTP_NOT_FOUND);
+            }
+            return \$result;
+        } catch (\Exception \$e) {
+            throw new {$name}Exception(
+                'Failed to retrieve {$name}',
+                developerHint: \$e->getMessage(),
+                code: Response::HTTP_INTERNAL_SERVER_ERROR,
+                previous: \$e
+            );
         }
-        return \$result;
     }
 
     public function create{$name}(array \$data)
@@ -310,7 +324,12 @@ class {$name}Service{$versionSuffix}
         try {
             return \$this->{$nameMin}Repository->create(\$data);
         } catch (\Exception \$e) {
-            throw new {$name}Exception('Failed to create {$name}', Response::HTTP_INTERNAL_SERVER_ERROR);
+            throw new {$name}Exception(
+                'Failed to create {$name}',
+                developerHint: \$e->getMessage(),
+                code: Response::HTTP_INTERNAL_SERVER_ERROR,
+                previous: \$e
+            );
         }
     }
 
@@ -319,7 +338,12 @@ class {$name}Service{$versionSuffix}
         try {
             return \$this->{$nameMin}Repository->update(\${$nameMin}, \$data);
         } catch (\Exception \$e) {
-            throw new {$name}Exception('Failed to update {$name}', Response::HTTP_INTERNAL_SERVER_ERROR);
+            throw new {$name}Exception(
+                'Failed to update {$name}',
+                developerHint: \$e->getMessage(),
+                code: Response::HTTP_INTERNAL_SERVER_ERROR,
+                previous: \$e
+            );
         }
     }
 
@@ -328,7 +352,12 @@ class {$name}Service{$versionSuffix}
         try {
             return \$this->{$nameMin}Repository->delete(\${$nameMin});
         } catch (\Exception \$e) {
-            throw new {$name}Exception('Failed to delete {$name}', Response::HTTP_INTERNAL_SERVER_ERROR);
+            throw new {$name}Exception(
+                'Failed to delete {$name}',
+                developerHint: \$e->getMessage(),
+                code: Response::HTTP_INTERNAL_SERVER_ERROR,
+                previous: \$e
+            );
         }
     }
 }
@@ -337,6 +366,7 @@ PHP;
             File::put($servicePath, $serviceContent);
         }
     }
+
 
 
     private function createFilter(string $name): void
@@ -559,9 +589,9 @@ PHP;
         // Si ya existe, modificarlo si hace falta
         $modelContent = File::get($modelPath);
 
-        
 
-       if (File::exists($modelPath)) {
+
+        if (File::exists($modelPath)) {
             $modelContent = <<<PHP
 <?php
 
@@ -606,10 +636,11 @@ PHP;
     private function updateController(string $name, ?string $version = null): void
 {
     $version = $version ?? 'V1';
-    $versionSuffix = $version; // Siempre agregar el sufijo de versión
+    $versionSuffix = $version;
     $controllerPath = app_path("Http/Controllers/Api/{$version}/{$name}Controller{$versionSuffix}.php");
 
     $nameMin = lcfirst($name);
+
     $controllerContent = <<<PHP
 <?php
 
@@ -617,51 +648,69 @@ namespace App\Http\Controllers\Api\\{$version};
 
 use App\Models\\{$name};
 use App\Filters\\{$name}Filter;
-use App\Services\\Api\\{$version}\\{$name}Service{$versionSuffix};
-use App\Http\Controllers\Api\\{$version}\ApiController;
+use App\Services\Api\\{$version}\\{$name}Service{$versionSuffix};
+use App\Http\Controllers\Api\\{$version}\\ApiController{$versionSuffix};
 use App\Http\Resources\Api\\{$version}\\{$name}\\{$name}Resource{$versionSuffix};
 use App\Http\Requests\Api\\{$version}\\{$name}\\Store{$name}Request{$versionSuffix};
 use App\Http\Requests\Api\\{$version}\\{$name}\\Update{$name}Request{$versionSuffix};
 
-class {$name}Controller{$versionSuffix} extends ApiController
+class {$name}Controller{$versionSuffix} extends ApiController{$versionSuffix}
 {
     public function __construct(private {$name}Service{$versionSuffix} \${$nameMin}Service) {}
 
     public function index({$name}Filter \$filters)
     {
-        \$perPage = request()->input('per_page', 10);
+        try {
+            \$perPage = request()->input('per_page', 10);
+            \${$nameMin}s = \$this->{$nameMin}Service->getAll{$name}s(\$filters, \$perPage);
 
-        \${$nameMin}s = \$this->{$nameMin}Service->getAll{$name}s(\$filters, \$perPage);
-
-        return \$this->ok('{$name}s retrieved successfully', {$name}Resource{$versionSuffix}::collection(\${$nameMin}s));
+            return \$this->ok('{$name}s retrieved successfully', {$name}Resource{$versionSuffix}::collection(\${$nameMin}s));
+        } catch (\\Throwable \$e) {
+            return \$this->handleException(\$e);
+        }
     }
 
     public function store(Store{$name}Request{$versionSuffix} \$request)
     {
-        \${$nameMin} = \$this->{$nameMin}Service->create{$name}(\$request->validated());
-        return \$this->ok('{$name} created successfully', new {$name}Resource{$versionSuffix}(\${$nameMin}));
+        try {
+            \${$nameMin} = \$this->{$nameMin}Service->create{$name}(\$request->validated());
+            return \$this->ok('{$name} created successfully', new {$name}Resource{$versionSuffix}(\${$nameMin}));
+        } catch (\\Throwable \$e) {
+            return \$this->handleException(\$e);
+        }
     }
 
     public function show({$name} \${$nameMin})
     {
-        return \$this->ok('{$name} retrieved successfully', new {$name}Resource{$versionSuffix}(\${$nameMin}));
+        try {
+            return \$this->ok('{$name} retrieved successfully', new {$name}Resource{$versionSuffix}(\${$nameMin}));
+        } catch (\\Throwable \$e) {
+            return \$this->handleException(\$e);
+        }
     }
 
     public function update(Update{$name}Request{$versionSuffix} \$request, {$name} \${$nameMin})
     {
-        \$this->{$nameMin}Service->update{$name}(\${$nameMin}, \$request->validated());
-        return \$this->ok('{$name} updated successfully');
+        try {
+            \${$nameMin} = \$this->{$nameMin}Service->update{$name}(\${$nameMin}, \$request->validated());
+            return \$this->ok('{$name} updated successfully', new {$name}Resource{$versionSuffix}(\${$nameMin}));
+        } catch (\\Throwable \$e) {
+            return \$this->handleException(\$e);
+        }
     }
 
     public function destroy({$name} \${$nameMin})
     {
-        \$this->{$nameMin}Service->delete{$name}(\${$nameMin});
-        return \$this->ok('{$name} deleted successfully');
+        try {
+            \$this->{$nameMin}Service->delete{$name}(\${$nameMin});
+            return \$this->ok('{$name} deleted successfully');
+        } catch (\\Throwable \$e) {
+            return \$this->handleException(\$e);
+        }
     }
 }
 PHP;
 
-    // Sobrescribe el archivo del controlador con el contenido actualizado
     File::put($controllerPath, $controllerContent);
 }
 
