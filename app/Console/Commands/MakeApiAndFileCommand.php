@@ -25,6 +25,7 @@ class MakeApiAndFileCommand extends Command
         $this->createApiController();
         $this->createBaseRepository();
         $this->createRepository($name);
+        $this->createDTO($name, $version);
         $this->createService($name, $version);
         $this->createFilter($name);
         $this->createQueryFilter();
@@ -332,6 +333,99 @@ PHP;
             File::put($repositoryPath, $repositoryContent);
         }
     }
+    private function createDTO(string $name, string $version = 'V1'): void
+    {
+        $versionSuffix = $version;
+        $dtoDir = app_path("DTOs/{$versionSuffix}");
+        $dtoPath = "{$dtoDir}/{$name}DTO{$versionSuffix}.php";
+
+        if (!File::exists($dtoDir)) {
+            File::makeDirectory($dtoDir, 0755, true);
+        }
+
+        if (!File::exists($dtoPath)) {
+            $dtoContent = <<<PHP
+<?php
+
+namespace App\DTOs\\{$versionSuffix};
+
+use Illuminate\Contracts\Support\Arrayable;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
+
+class {$name}DTO{$versionSuffix} implements Arrayable
+{
+    public \$id;
+    public \$name;
+    public \$description;
+    public \$createdAt;
+    public \$updatedAt;
+
+    protected array \$extra = [];
+
+    protected function __construct(array \$attributes)
+    {
+        \$this->id = \$attributes['id'] ?? null;
+        \$this->name = \$attributes['name'] ?? '';
+        \$this->description = \$attributes['description'] ?? null;
+        \$this->createdAt = \$attributes['created_at'] ?? null;
+        \$this->updatedAt = \$attributes['updated_at'] ?? null;
+        \$this->extra = array_diff_key(\$attributes, array_flip(['id', 'name', 'description', 'created_at', 'updated_at']));
+    }
+
+    public static function rules(): array
+    {
+        return [
+            'name' => 'required|string|max:255',
+            'description' => 'nullable|string',
+        ];
+    }
+
+    public static function fromRequest(array \$data): self
+    {
+        \$validated = self::validate(\$data);
+        return new self(\$validated);
+    }
+
+    public static function fromModel(\$model): self
+    {
+        return new self(\$model->toArray());
+    }
+
+    public static function validate(array \$data): array
+    {
+        \$validator = Validator::make(\$data, self::rules());
+
+        if (\$validator->fails()) {
+            throw new ValidationException(\$validator);
+        }
+
+        return \$validator->validated();
+    }
+
+    public function toArray(): array
+    {
+        return [
+            'id' => \$this->id,
+            'name' => \$this->name,
+            'description' => \$this->description,
+            'created_at' => \$this->createdAt,
+            'updated_at' => \$this->updatedAt,
+            'extra' => \$this->extra,
+        ];
+    }
+
+    public function getExtra(): array
+    {
+        return \$this->extra;
+    }
+}
+PHP;
+
+            File::put($dtoPath, $dtoContent);
+        }
+    }
+
 
 
     private function createService(string $name, string $version = 'V1'): void
@@ -356,6 +450,7 @@ use App\Models\\{$name};
 use App\Exceptions\\{$name}Exception;
 use App\Repositories\\{$versionSuffix}\\{$name}Repository{$versionSuffix};
 use Illuminate\Http\Response;
+use App\DTOs\\{$version}\\{$name}DTO{$version};
 
 class {$name}Service{$versionSuffix}
 {
@@ -393,33 +488,15 @@ class {$name}Service{$versionSuffix}
         }
     }
 
-    public function create{$name}(array \$data)
-    {
-        try {
-            return \$this->{$nameMin}Repository->create(\$data);
-        } catch (\Exception \$e) {
-            throw new {$name}Exception(
-                'Failed to create {$name}',
-                developerHint: \$e->getMessage(),
-                code: Response::HTTP_INTERNAL_SERVER_ERROR,
-                previous: \$e
-            );
-        }
-    }
+    public function create{$name}({$name}DTO{$version} \$dto)
+{
+    return \$this->{$nameMin}Repository->create(\$dto->toArray());
+}
 
-    public function update{$name}({$name} \${$nameMin}, array \$data)
-    {
-        try {
-            return \$this->{$nameMin}Repository->update(\${$nameMin}, \$data);
-        } catch (\Exception \$e) {
-            throw new {$name}Exception(
-                'Failed to update {$name}',
-                developerHint: \$e->getMessage(),
-                code: Response::HTTP_INTERNAL_SERVER_ERROR,
-                previous: \$e
-            );
-        }
-    }
+    public function update{$name}({$name} \${$nameMin}, {$name}DTO{$version} \$dto)
+{
+    return \$this->{$nameMin}Repository->update(\${$nameMin}, \$dto->toArray());
+}
 
     public function delete{$name}({$name} \${$nameMin})
     {
@@ -806,6 +883,7 @@ use App\Http\Controllers\Api\\{$version}\\ApiController{$versionSuffix};
 use App\Http\Resources\Api\\{$version}\\{$name}\\{$name}Resource{$versionSuffix};
 use App\Http\Requests\Api\\{$version}\\{$name}\\Store{$name}Request{$versionSuffix};
 use App\Http\Requests\Api\\{$version}\\{$name}\\Update{$name}Request{$versionSuffix};
+use App\DTOs\\{$version}\\{$name}DTO{$version};
 
 class {$name}Controller{$versionSuffix} extends ApiController{$versionSuffix}
 {
@@ -826,7 +904,9 @@ class {$name}Controller{$versionSuffix} extends ApiController{$versionSuffix}
     public function store(Store{$name}Request{$versionSuffix} \$request)
     {
         try {
-            \${$nameMin} = \$this->{$nameMin}Service->create{$name}(\$request->validated());
+            \$dto = {$name}DTO{$version}::fromRequest(\$request->validated()
+);
+\${$nameMin} = \$this->{$nameMin}Service->create{$name}(\$dto);
             return \$this->ok('{$name} created successfully', new {$name}Resource{$versionSuffix}(\${$nameMin}));
         } catch (\\Throwable \$e) {
             return \$this->handleException(\$e);
@@ -845,7 +925,9 @@ class {$name}Controller{$versionSuffix} extends ApiController{$versionSuffix}
     public function update(Update{$name}Request{$versionSuffix} \$request, {$name} \${$nameMin})
     {
         try {
-            \${$nameMin} = \$this->{$nameMin}Service->update{$name}(\${$nameMin}, \$request->validated());
+            \$dto = {$name}DTO{$version}::fromRequest(\$request->validated()
+);
+\${$nameMin} = \$this->{$nameMin}Service->update{$name}(\${$nameMin}, \$dto);
             return \$this->ok('{$name} updated successfully', new {$name}Resource{$versionSuffix}(\${$nameMin}));
         } catch (\\Throwable \$e) {
             return \$this->handleException(\$e);
