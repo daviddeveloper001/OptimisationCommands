@@ -18,6 +18,7 @@ class MakeApiAndFileCommand extends Command
         $name = str_replace(' ', '', ucwords($rawName));
         $version = $this->argument('version') ?? 'V1';
 
+        $this->createModelBase();
         $this->createModelWithMigration($name);
         $this->createApiComponents($name, $version);
         $this->createApiResponsesTrait();
@@ -667,6 +668,44 @@ PHP;
             File::put($exceptionPath, $exceptionContent);
         }
     }
+
+    private function createModelBase(): void
+    {
+        $modelBasePath = app_path("Models/ModelBase.php");
+
+        if (!File::exists(app_path('Models'))) {
+            File::makeDirectory(app_path('Models'), 0755, true);
+        }
+
+        if (!File::exists($modelBasePath)) {
+            $modelBaseContent = <<<PHP
+<?php
+
+namespace App\Models;
+
+use App\Filters\QueryFilter;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Contracts\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+
+class ModelBase extends Model
+{
+    use SoftDeletes;
+    use HasFactory;
+
+    public function scopeFilter(Builder \$builder, QueryFilter \$filters): Builder
+    {
+        return \$filters->apply(\$builder);
+    }
+}
+PHP;
+
+            File::put($modelBasePath, $modelBaseContent);
+            $this->info('ModelBase created successfully.');
+        }
+    }
+
 
 
 
