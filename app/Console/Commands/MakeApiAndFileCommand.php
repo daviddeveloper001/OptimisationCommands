@@ -20,12 +20,14 @@ class MakeApiAndFileCommand extends Command
 
         $this->createModelWithMigration($name);
         $this->createApiComponents($name, $version);
+        $this->createApiResponsesTrait();
         $this->createApiController();
         $this->createBaseRepository();
         $this->createRepository($name);
         $this->createService($name, $version);
         $this->createFilter($name);
         $this->createQueryFilter();
+        $this->createApiRenderableExceptionInterface($version);
         $this->createException($name);
         $this->createBaseModel($name);
         $this->updateRoutes($name, $version);
@@ -66,6 +68,52 @@ class MakeApiAndFileCommand extends Command
         ]);
     }
 
+    private function createApiResponsesTrait(): void
+    {
+        $traitDir = app_path('Traits');
+        $traitPath = "{$traitDir}/ApiResponses.php";
+
+        if (!File::exists($traitDir)) {
+            File::makeDirectory($traitDir, 0755, true);
+        }
+
+        if (!File::exists($traitPath)) {
+            $traitContent = <<<PHP
+<?php
+
+namespace App\Traits;
+
+trait ApiResponses
+{
+    protected function ok(\$message, \$data = [])
+    {
+        return \$this->success(\$message, \$data, 200);
+    }
+
+    protected function success(\$message, \$data = [], \$statusCode = 200)
+    {
+        return response()->json([
+            'data' => \$data,
+            'message' => \$message,
+            'status' => \$statusCode
+        ], \$statusCode);
+    }
+
+    protected function error(\$message, \$statusCode)
+    {
+        return response()->json([
+            'message' => \$message,
+            'status' => \$statusCode
+        ], \$statusCode);
+    }
+}
+PHP;
+
+            File::put($traitPath, $traitContent);
+            $this->info('ApiResponses trait created successfully.');
+        }
+    }
+
 
     private function createApiController(string $version = 'V1'): void
     {
@@ -75,7 +123,6 @@ class MakeApiAndFileCommand extends Command
         $controllerFileName = "ApiController{$versionSuffix}.php";
         $apiControllerPath = "{$directoryPath}/{$controllerFileName}";
 
-        // Asegúrate de que la carpeta exista
         if (!File::exists($directoryPath)) {
             File::makeDirectory($directoryPath, 0755, true);
         }
@@ -88,6 +135,9 @@ namespace App\Http\Controllers\Api\\{$versionNamespace};
 
 use App\Http\Controllers\Controller;
 use App\Traits\ApiResponses;
+use App\Interfaces\\{$versionSuffix}\\ApiRenderableException{$versionSuffix};
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class ApiController{$versionSuffix} extends Controller
 {
@@ -105,12 +155,35 @@ class ApiController{$versionSuffix} extends Controller
 
         return in_array(strtolower(\$relationship), \$includesValues);
     }
+
+    protected function handleException(Throwable \$e)
+    {
+        if (\$e instanceof ApiRenderableException{$versionSuffix}) {
+            Log::error(get_class(\$e) . ': ' . \$e->getUserMessage(), [
+                'developer_hint' => \$e->getDeveloperHint(),
+                'exception' => \$e,
+            ]);
+
+            return response()->json([
+                'message' => \$e->getUserMessage(),
+                'error_code' => \$e->getStatusCode(),
+            ], \$e->getStatusCode());
+        }
+
+        Log::error("Unhandled Exception", ['exception' => \$e]);
+
+        return response()->json([
+            'message' => 'An unexpected error occurred',
+        ], 500);
+    }
 }
 PHP;
 
             File::put($apiControllerPath, $apiControllerContent);
         }
     }
+
+
 
 
     private function createBaseRepository(string $version = 'V1'): void
@@ -510,6 +583,36 @@ PHP;
             File::put($queryFilterPath, $queryFilterContent);
         }
     }
+
+    private function createApiRenderableExceptionInterface(string $version = 'V1'): void
+    {
+        $versionSuffix = $version;
+        $interfaceDir = app_path("Interfaces/{$versionSuffix}");
+        $interfacePath = "{$interfaceDir}/ApiRenderableException{$versionSuffix}.php";
+
+        if (!File::exists($interfaceDir)) {
+            File::makeDirectory($interfaceDir, 0755, true);
+        }
+
+        if (!File::exists($interfacePath)) {
+            $interfaceContent = <<<PHP
+<?php
+
+namespace App\Interfaces\\{$versionSuffix};
+
+interface ApiRenderableException{$versionSuffix}
+{
+    public function getStatusCode(): int;
+    public function getUserMessage(): string;
+    public function getDeveloperHint(): ?string;
+}
+PHP;
+
+            File::put($interfacePath, $interfaceContent);
+            $this->info("ApiRenderableException{$versionSuffix} interface created successfully.");
+        }
+    }
+
 
     private function createException(string $name): void
     {
